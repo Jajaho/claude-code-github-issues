@@ -259,7 +259,7 @@ export const register: Register = on => {
           </Button>
           {d && (
             <Button key="reload" hotkey="r" plain onPress={() => void openIssue($, d.number)}>
-              <Text color="subtle">↻ Refresh</Text>
+              <Text color="subtle">Refresh</Text>
             </Button>
           )}
         </Box>
@@ -310,7 +310,7 @@ export const register: Register = on => {
                 void $.ui.toast(`#${d.number}: handed to Claude`)
               }}
             >
-              ✻ Work on this issue
+              Work on this issue
             </Button>
             {isOpen ? (
               <>
@@ -332,7 +332,7 @@ export const register: Register = on => {
           {rule}
           <Box flexDirection="column">
             <Text>
-              <Text color="claude">⏺</Text> <Text bold>{d.author}</Text>{' '}
+              <Text color="claude">●</Text> <Text bold>{d.author}</Text>{' '}
               <Text color="subtle">· {ago(d.createdAt)} ago</Text>
             </Text>
             <Box paddingLeft={2}>
@@ -342,7 +342,7 @@ export const register: Register = on => {
           {d.comments.map((c, i) => (
             <Box key={`comment-${i}`} flexDirection="column">
               <Text>
-                <Text color="subtle">⏺</Text> <Text bold>{c.author}</Text>{' '}
+                <Text color="subtle">●</Text> <Text bold>{c.author}</Text>{' '}
                 <Text color="subtle">· {ago(c.createdAt)} ago</Text>
               </Text>
               <Box paddingLeft={2}>
@@ -452,11 +452,12 @@ export const register: Register = on => {
           {FILTERS.map(f => (
             <Button key={`filter-${f.value}`} plain onPress={() => void pickFilter(f.value)}>
               {f.value === filter ? (
-                <Text color="claude" bold underline>
-                  {f.label}
+                <Text color="claude" bold>
+                  {' '}
+                  <Text underline>{f.label}</Text>{' '}
                 </Text>
               ) : (
-                <Text color="subtle">{f.label}</Text>
+                <Text color="subtle">{` ${f.label} `}</Text>
               )}
             </Button>
           ))}
@@ -471,16 +472,18 @@ export const register: Register = on => {
             const meta = `  ${who} · ${ago(issue.updatedAt)}`
             const labels = issue.labels.map(l => ` [${l}]`).join('')
             const num = `#${issue.number}`
-            const room = width - 4 - num.length - labels.length - meta.length
+            // ' ● #n title [labels] meta ': a space either side keeps the dot off the edge of the highlight
+            const room = width - 6 - num.length - labels.length - meta.length
             const title =
               room > 8 && issue.title.length > room ? `${issue.title.slice(0, room - 1)}…` : issue.title
 
             return (
               <Button key={`issue-${issue.number}`} plain onPress={() => void openIssue($, issue.number)}>
+                {' '}
                 <Text color={isOpen ? 'success' : 'merged'}>●</Text> <Text color="subtle">{num}</Text>{' '}
                 {title}
                 <Text color="suggestion">{labels}</Text>
-                <Text color="subtle">{meta}</Text>
+                <Text color="subtle">{`${meta} `}</Text>
               </Button>
             )
           })}
@@ -490,7 +493,7 @@ export const register: Register = on => {
             + New issue
           </Button>
           <Button key="refresh" hotkey="r" onPress={() => void loadList($)}>
-            ↻ Refresh
+            Refresh
           </Button>
         </Box>
         {hints(['enter open', 'n new issue', 'r refresh', 'tab next'])}
