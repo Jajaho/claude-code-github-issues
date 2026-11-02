@@ -1,0 +1,12 @@
+{
+  "name": "gh-issues",
+  "version": "0.1.0",
+  "description": "GitHub issues pane: list, read, create, comment on, close and reopen issues through the gh CLI, and hand an issue to Claude",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Jakob Holz",
+    "url": "https://github.com/Jajaho"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Jajaho/claude-gh-issues"
+}
