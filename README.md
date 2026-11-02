@@ -1,52 +1,40 @@
-# gh-issues
+# GitHub Issues for Claude Code
 
-A Claude Code plugin for GitHub issues: a pane beside the chat that lists the issues of the
-current repository, shows an issue with its comments, and creates, comments on, closes and
-reopens issues. *Work on this issue* hands the issue to Claude as a prompt. A bundled skill
-covers the same operations for plain-language requests in the chat.
+Browse, create and close GitHub issues in a pane beside your Claude Code chat, and hand any
+issue to Claude with one key.
 
-All GitHub access goes through the [GitHub CLI](https://cli.github.com/) (`gh`), so no token
-setup is required beyond `gh auth login`.
+<p align="center">
+  <img src="assets/pane.svg" alt="The GitHub issues pane in Claude Code: open issues of a repository with state, labels, assignee and age" width="720">
+</p>
 
 ## Install
 
 ```
-/plugin install gh-issues --marketplace Jajaho/claude-gh-issues
+/plugin install gh-issues --marketplace Jajaho/claude-code-github-issues
 ```
 
-Requirements: `gh` on the `PATH`, logged in with `repo` scope; a session started inside a
-clone of a GitHub repository.
+You need the [GitHub CLI](https://cli.github.com/) installed and logged in (`gh auth login`),
+and Claude Code started inside a clone of a GitHub repository.
 
 ## Use
 
-| Command | Effect |
+| Command | Opens |
 |---|---|
-| `/issues` | Opens the pane with the open issues of the current repository |
-| `/issues 42` | Opens issue #42 |
-| `/issues new` | Opens the form for a new issue |
+| `/issues` | the open issues of the current repository |
+| `/issues 42` | issue #42 with its comments |
+| `/issues new` | a form for a new issue |
 
-In the pane:
+- **Filter** by open, assigned to me, created by me, closed or all.
+- **Read** an issue with its labels, assignees and comments, rendered as Markdown.
+- **Comment, close or reopen** without leaving the terminal.
+- **Work on this issue** (`w`) asks Claude to read the issue, branch, implement, test and
+  commit. It never pushes, opens a pull request or touches the issue unless you ask.
 
-- **List**: *Show* filters by open, assigned to me, created by me, closed or all. Click an
-  issue (or Tab to it and press Enter) to open it. Hotkeys: `r` refresh, `n` new issue.
-- **Issue**: title, state, labels, body and comments as Markdown. *Comment* posts the text on
-  Enter. *Close as completed*, *Close as not planned* and *Reopen* change the state.
-  *Work on this issue* (`w`) submits a prompt that has Claude read the issue, follow the
-  repository's CLAUDE.md branch and commit rules, implement, test and commit, without pushing.
-  Hotkeys: `b` back, `r` refresh, `c` close.
-- **New issue**: title, Markdown description and an optional label; Enter in the description
-  or *Create issue* creates it and opens it.
+Keys in the pane: `n` new issue, `r` refresh, `b` back, `c` close, `w` work on it, `Tab` to
+move, `Esc` back to the prompt.
 
-The pane has keyboard focus after `/issues`; otherwise give it focus with the focus chord or
-a click. Esc returns to the prompt.
-
-## Development
-
-```
-claude --plugin-dir path/to/claude-gh-issues
-claude plugin validate path/to/claude-gh-issues
-claude plugin test path/to/claude-gh-issues
-```
+You can also just ask in the chat, for example *"show me the open bugs"* or *"file an issue
+about the slow start-up"*.
 
 ## License
 
