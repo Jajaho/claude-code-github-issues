@@ -205,26 +205,46 @@ export const register: Register = on => {
     const { Box, Text, Button, Link, Markdown } = t
     const Input = 'Input' in t ? t.Input : undefined
     const Select = 'Select' in t ? t.Select : undefined
-    const width = e.props.bodyColumns
+    const width = Math.max(30, e.props.bodyColumns)
+    const isTerminal = e.surface === 'terminal'
 
     const repo = await read($, repoA)
     const view = await read($, viewA)
     const busy = await read($, busyA)
     const error = await read($, errorA)
 
-    const status = (
-      <Box flexDirection="column">
-        {busy && <Text dimColor>{busy} …</Text>}
-        {error && <Text color="red">{error}</Text>}
+    const rule = <Text color="subtle">{'─'.repeat(width)}</Text>
+    const hints = (items: string[]) =>
+      isTerminal ? <Text color="subtle">{items.join(' · ')}</Text> : null
+    const status =
+      busy || error ? (
+        <Box flexDirection="column">
+          {busy && (
+            <Text color="claude">
+              ✻ <Text color="subtle">{busy}…</Text>
+            </Text>
+          )}
+          {error && <Text color="error">✗ {error}</Text>}
+        </Box>
+      ) : null
+    const header = (sub: string) => (
+      <Box flexDirection="row" justifyContent="space-between" width={width}>
+        <Text>
+          <Text color="claude">●</Text> <Text bold>{repo?.nameWithOwner ?? 'GitHub issues'}</Text>
+        </Text>
+        <Text color="subtle">{sub}</Text>
       </Box>
     )
 
     if (!repo) {
       return (
-        <Box flexDirection="column" gap={1}>
-          <Text>No GitHub repository is known for this directory.</Text>
+        <Box flexDirection="column" gap={1} width={width}>
+          {header('')}
+          <Text color="subtle">No GitHub repository is known for this directory.</Text>
           {status}
-          <Button key="retry" onPress={() => void loadList($)}>Retry</Button>
+          <Button key="retry" onPress={() => void loadList($)}>
+            Retry
+          </Button>
         </Box>
       )
     }
@@ -232,43 +252,53 @@ export const register: Register = on => {
     if (view === 'detail') {
       const d = await read($, detailA)
       const comment = await read($, commentA)
-      const header = (
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          <Button key="back" hotkey="b" onPress={() => void update($, viewA, () => 'list')}>
-            Back
+      const nav = (
+        <Box flexDirection="row" gap={2}>
+          <Button key="back" hotkey="b" plain onPress={() => void update($, viewA, () => 'list')}>
+            <Text color="subtle">← Back</Text>
           </Button>
           {d && (
-            <Button key="reload" hotkey="r" onPress={() => void openIssue($, d.number)}>
-              Refresh
+            <Button key="reload" hotkey="r" plain onPress={() => void openIssue($, d.number)}>
+              <Text color="subtle">↻ Refresh</Text>
             </Button>
           )}
         </Box>
       )
       if (!d) {
         return (
-          <Box flexDirection="column" gap={1}>
-            {header}
+          <Box flexDirection="column" gap={1} width={width}>
+            {header('')}
+            {nav}
             {status}
           </Box>
         )
       }
       const isOpen = d.state === 'OPEN'
-      const reason = d.stateReason ? ` (${d.stateReason.toLowerCase().replace('_', ' ')})` : ''
+      const notPlanned = d.stateReason === 'NOT_PLANNED'
+      const stateText = isOpen ? 'Open' : notPlanned ? 'Closed · not planned' : 'Closed'
+      const stateColor = isOpen ? 'success' : notPlanned ? 'subtle' : 'merged'
+      const nComments = `${d.comments.length} ${d.comments.length === 1 ? 'comment' : 'comments'}`
 
       return (
         <Box flexDirection="column" gap={1} width={width}>
-          {header}
+          {header(`#${d.number}`)}
+          {nav}
           <Box flexDirection="column">
-            <Text bold>
-              #{d.number} {d.title}
+            <Text bold>{d.title}</Text>
+            <Text>
+              <Text color={stateColor}>
+                {notPlanned ? '○' : '●'} {stateText}
+              </Text>
+              <Text color="subtle">
+                {`  ${d.author} opened ${ago(d.createdAt)} ago · ${nComments}`}
+              </Text>
             </Text>
-            <Text dimColor>
-              <Text color={isOpen ? 'green' : 'magenta'}>{d.state.toLowerCase()}{reason}</Text>
-              {' · '}opened by {d.author} {ago(d.createdAt)} ago · {d.comments.length} comments
-            </Text>
-            {d.labels.length > 0 && <Text color="cyan">{d.labels.join(', ')}</Text>}
-            {d.assignees.length > 0 && <Text dimColor>assigned: {d.assignees.join(', ')}</Text>}
-            <Link href={d.url} label="Open on GitHub" />
+            {(d.labels.length > 0 || d.assignees.length > 0) && (
+              <Text>
+                <Text color="suggestion">{d.labels.map(l => `[${l}] `).join('')}</Text>
+                {d.assignees.length > 0 && <Text color="subtle">→ {d.assignees.join(', ')}</Text>}
+              </Text>
+            )}
           </Box>
           <Box flexDirection="row" gap={1} flexWrap="wrap">
             <Button
@@ -280,7 +310,7 @@ export const register: Register = on => {
                 void $.ui.toast(`#${d.number}: handed to Claude`)
               }}
             >
-              Work on this issue
+              ✻ Work on this issue
             </Button>
             {isOpen ? (
               <>
@@ -296,29 +326,44 @@ export const register: Register = on => {
                 Reopen
               </Button>
             )}
+            <Link href={d.url} label="↗ GitHub" />
           </Box>
           {status}
-          <Markdown text={d.body.trim() || '_No description provided._'} />
+          {rule}
+          <Box flexDirection="column">
+            <Text>
+              <Text color="claude">⏺</Text> <Text bold>{d.author}</Text>{' '}
+              <Text color="subtle">· {ago(d.createdAt)} ago</Text>
+            </Text>
+            <Box paddingLeft={2}>
+              <Markdown text={d.body.trim() || '_No description provided._'} />
+            </Box>
+          </Box>
           {d.comments.map((c, i) => (
             <Box key={`comment-${i}`} flexDirection="column">
-              <Text dimColor>
-                ── {c.author} · {ago(c.createdAt)} ago
+              <Text>
+                <Text color="subtle">⏺</Text> <Text bold>{c.author}</Text>{' '}
+                <Text color="subtle">· {ago(c.createdAt)} ago</Text>
               </Text>
-              <Markdown text={c.body.trim() || '_empty comment_'} />
+              <Box paddingLeft={2}>
+                <Markdown text={c.body.trim() || '_empty comment_'} />
+              </Box>
             </Box>
           ))}
           {Input && (
-            <Input
-              key="comment"
-              label="Comment"
-              placeholder="Markdown text; Enter posts the comment"
-              rows={4}
-              submitLabel="post"
-              value={comment}
-              onInput={value => void update($, commentA, () => value)}
-              onSubmit={value => void submitComment($, d.number, value)}
-            />
+            <Box borderStyle="round" borderColor="promptBorder" paddingX={1} width={width}>
+              <Input
+                key="comment"
+                placeholder="Add a comment (Markdown); Enter posts it"
+                rows={3}
+                submitLabel="post"
+                value={comment}
+                onInput={value => void update($, commentA, () => value)}
+                onSubmit={value => void submitComment($, d.number, value)}
+              />
+            </Box>
           )}
+          {hints(['w work', 'c close', 'b back', 'r refresh', 'tab next control'])}
         </Box>
       )
     }
@@ -330,34 +375,45 @@ export const register: Register = on => {
 
       return (
         <Box flexDirection="column" gap={1} width={width}>
-          <Text bold>New issue in {repo.nameWithOwner}</Text>
+          {header('new issue')}
           {Input ? (
             <>
-              <Input
-                key="new-title"
-                label="Title"
-                autoFocus
-                value={draft.title}
-                submitLabel="next"
-                onInput={value => patch({ title: value })}
-                onSubmit={value => patch({ title: value })}
-              />
-              <Input
-                key="new-body"
-                label="Description"
-                placeholder="Markdown text"
-                rows={8}
-                value={draft.body}
-                submitLabel="create"
-                onInput={value => patch({ body: value })}
-                onSubmit={value => {
-                  patch({ body: value })
-                  void createIssue($)
-                }}
-              />
+              <Box flexDirection="column">
+                <Text color="subtle">Title</Text>
+                <Box borderStyle="round" borderColor="promptBorder" paddingX={1} width={width}>
+                  <Input
+                    key="new-title"
+                    autoFocus
+                    placeholder="Short summary"
+                    value={draft.title}
+                    submitLabel="next"
+                    onInput={value => patch({ title: value })}
+                    onSubmit={value => patch({ title: value })}
+                  />
+                </Box>
+              </Box>
+              <Box flexDirection="column">
+                <Text color="subtle">Description</Text>
+                <Box borderStyle="round" borderColor="promptBorder" paddingX={1} width={width}>
+                  <Input
+                    key="new-body"
+                    placeholder="Markdown; Enter creates the issue"
+                    rows={8}
+                    value={draft.body}
+                    submitLabel="create"
+                    onInput={value => patch({ body: value })}
+                    onSubmit={value => {
+                      patch({ body: value })
+                      void createIssue($)
+                    }}
+                  />
+                </Box>
+              </Box>
             </>
           ) : (
-            <Text dimColor>This surface has no text fields; create issues from the terminal or desktop app.</Text>
+            <Text color="subtle">
+              This surface has no text fields; create issues from the terminal or desktop app.
+            </Text>
           )}
           {Select && labels.length > 0 && (
             <Select
@@ -383,53 +439,61 @@ export const register: Register = on => {
 
     const filter = await read($, filterA)
     const issues: IssueRow[] = await read($, issuesA)
-    const pickFilter = async (value: string) => {
-      await update($, filterA, () => value as IssueFilter)
+    const pickFilter = async (value: IssueFilter) => {
+      await update($, filterA, () => value)
       await loadList($)
     }
+    const filterName = FILTERS.find(f => f.value === filter)?.label.toLowerCase() ?? ''
 
     return (
       <Box flexDirection="column" gap={1} width={width}>
-        <Text bold>{repo.nameWithOwner}</Text>
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          <Button key="refresh" hotkey="r" onPress={() => void loadList($)}>
-            Refresh
-          </Button>
-          <Button key="new" hotkey="n" variant="primary" onPress={() => void openNew($)}>
-            New issue
-          </Button>
-        </Box>
-        {Select ? (
-          <Select
-            key="filter"
-            label="Show"
-            value={filter}
-            options={FILTERS}
-            onSelect={value => void pickFilter(value)}
-          />
-        ) : (
-          <Box flexDirection="row" gap={1} flexWrap="wrap">
-            {FILTERS.map(f => (
-              <Button key={`filter-${f.value}`} dimColor={f.value !== filter} onPress={() => void pickFilter(f.value)}>
-                {f.label}
-              </Button>
-            ))}
-          </Box>
-        )}
-        {status}
-        {issues.length === 0 && !busy && <Text dimColor>No issues match this filter.</Text>}
-        <Box flexDirection="column">
-          {issues.map(issue => (
-            <Button key={`issue-${issue.number}`} plain onPress={() => void openIssue($, issue.number)}>
-              <Text color={issue.state === 'OPEN' ? 'green' : 'magenta'}>#{issue.number}</Text> {issue.title}
-              {issue.labels.length > 0 && <Text color="cyan"> [{issue.labels.join(', ')}]</Text>}
-              <Text dimColor>
-                {' '}
-                · {issue.assignees.length > 0 ? issue.assignees.join(', ') : issue.author} · {ago(issue.updatedAt)}
-              </Text>
+        {header(`${issues.length} ${filterName}`)}
+        <Box flexDirection="row" gap={2} flexWrap="wrap">
+          {FILTERS.map(f => (
+            <Button key={`filter-${f.value}`} plain onPress={() => void pickFilter(f.value)}>
+              {f.value === filter ? (
+                <Text color="claude" bold underline>
+                  {f.label}
+                </Text>
+              ) : (
+                <Text color="subtle">{f.label}</Text>
+              )}
             </Button>
           ))}
         </Box>
+        {rule}
+        {status}
+        {issues.length === 0 && !busy && <Text color="subtle">No issues match this filter.</Text>}
+        <Box flexDirection="column">
+          {issues.map(issue => {
+            const isOpen = issue.state === 'OPEN'
+            const who = issue.assignees.length > 0 ? `→ ${issue.assignees.join(', ')}` : issue.author
+            const meta = `  ${who} · ${ago(issue.updatedAt)}`
+            const labels = issue.labels.map(l => ` [${l}]`).join('')
+            const num = `#${issue.number}`
+            const room = width - 4 - num.length - labels.length - meta.length
+            const title =
+              room > 8 && issue.title.length > room ? `${issue.title.slice(0, room - 1)}…` : issue.title
+
+            return (
+              <Button key={`issue-${issue.number}`} plain onPress={() => void openIssue($, issue.number)}>
+                <Text color={isOpen ? 'success' : 'merged'}>●</Text> <Text color="subtle">{num}</Text>{' '}
+                {title}
+                <Text color="suggestion">{labels}</Text>
+                <Text color="subtle">{meta}</Text>
+              </Button>
+            )
+          })}
+        </Box>
+        <Box flexDirection="row" gap={1}>
+          <Button key="new" hotkey="n" variant="primary" onPress={() => void openNew($)}>
+            + New issue
+          </Button>
+          <Button key="refresh" hotkey="r" onPress={() => void loadList($)}>
+            ↻ Refresh
+          </Button>
+        </Box>
+        {hints(['enter open', 'n new issue', 'r refresh', 'tab next'])}
       </Box>
     )
   })

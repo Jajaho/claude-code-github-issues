@@ -84,7 +84,7 @@ test('the list shows issues and opens one with its comments', async ($, on) => {
   await runIssues($, '')
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /acme\/widgets/ }))?.text).toBe('acme/widgets')
+  expect((await ui.find({ type: 'Text', text: /acme\/widgets/ }))?.text).toBe('● acme/widgets')
   expect(await ui.find({ key: 'issue-7' })).toBeDefined()
 
   await ui.press({ key: 'issue-7' })
