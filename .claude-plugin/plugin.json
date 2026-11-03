@@ -1,6 +1,6 @@
 {
   "name": "gh-issues",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "GitHub issues pane: list, read, create, comment on, close and reopen issues through the gh CLI, and hand an issue to Claude",
   "types": "./types/index.d.ts",
   "author": {
