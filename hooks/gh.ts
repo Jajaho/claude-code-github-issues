@@ -132,13 +132,13 @@ export async function issueCreate(
   repo: string,
   title: string,
   body: string,
-  label: string,
+  labels: readonly string[],
 ): Promise<number> {
   const out = await gh(
     $,
     [
       'issue', 'create', '--repo', repo, '--title', title, '--body-file', '-',
-      ...(label ? ['--label', label] : []),
+      ...labels.flatMap(label => ['--label', label]),
     ],
     body,
   )

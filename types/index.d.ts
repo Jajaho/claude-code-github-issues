@@ -28,7 +28,7 @@ export type IssueDetail = {
 
 export type IssueView = 'list' | 'detail' | 'new'
 export type IssueFilter = 'open' | 'assigned' | 'authored' | 'closed' | 'all'
-export type IssueDraft = { title: string; body: string; label: string }
+export type IssueDraft = { title: string; body: string; labels: string[] }
 
 declare module 'claude-code' {
   interface PluginState {

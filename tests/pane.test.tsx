@@ -110,14 +110,16 @@ test('a comment is posted through stdin and close passes the reason', async ($, 
   await ui.unmount()
 })
 
-test('a new issue is created with title, body and label', async ($, on) => {
+test('a new issue is created with title, body and the labels clicked', async ($, on) => {
   const calls: Call[] = []
   fakeGh(on, calls)
   await runIssues($, 'new')
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.input({ key: 'new-title', text: 'Add dark mode', kind: 'change' })
-  await ui.select({ key: 'new-label', value: 'enhancement' })
+  await ui.press({ key: 'label-bug' })
+  await ui.press({ key: 'label-enhancement' })
+  await ui.press({ key: 'label-bug' })
   await ui.input({ key: 'new-body', text: 'Details.', kind: 'change' })
   await ui.press({ key: 'create' })
 
@@ -128,6 +130,22 @@ test('a new issue is created with title, body and label', async ($, on) => {
   ])
   expect(created?.stdin).toBe('Details.')
   expect(calls.some(c => c.argv.join(' ').startsWith('gh issue view 8'))).toBe(true)
+  await ui.unmount()
+})
+
+test('two clicked labels are both passed to gh', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls)
+  await runIssues($, 'new')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.input({ key: 'new-title', text: 'Flaky start-up', kind: 'change' })
+  await ui.press({ key: 'label-bug' })
+  await ui.press({ key: 'label-enhancement' })
+  await ui.press({ key: 'create' })
+
+  const created = calls.find(c => c.argv[2] === 'create')
+  expect(created?.argv.slice(-4)).toEqual(['--label', 'bug', '--label', 'enhancement'])
   await ui.unmount()
 })
 
