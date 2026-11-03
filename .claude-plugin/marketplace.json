@@ -5,7 +5,7 @@
     {
       "name": "gh-issues",
       "source": "./",
-      "description": "GitHub issues pane: list, read, create, comment on, close and reopen issues through the gh CLI, and hand an issue to Claude"
+      "description": "GitHub issues pane: list, read, create, comment on, close and reopen issues, set their type, fields, projects, milestone and relationships through the gh CLI, and hand an issue to Claude"
     }
   ]
 }
