@@ -25,7 +25,8 @@ and Claude Code started inside a clone of a GitHub repository.
 | `/issues new` | a form for a new issue |
 
 - **Filter** by open, assigned to me, created by me, closed or all.
-- **Read** an issue with its labels, assignees and comments, rendered as Markdown.
+- **Read** an issue with its labels, assignees and comments, rendered as Markdown. Images
+  show as `↗ image` links that open in the browser.
 - **Comment, close or reopen** without leaving the terminal.
 - **Work on this issue** (`w`) asks Claude to read the issue, branch, implement, test and
   commit. It never pushes, opens a pull request or touches the issue unless you ask.

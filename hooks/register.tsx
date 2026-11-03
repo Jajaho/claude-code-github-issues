@@ -12,6 +12,7 @@ import {
   labelList,
   repoView,
 } from './gh'
+import { imagesToLinks } from './markdown'
 
 const PANE = 'gh-issues'
 const TITLE = 'GitHub issues'
@@ -205,8 +206,10 @@ export const register: Register = on => {
     const { Box, Text, Button, Link, Markdown } = t
     const Input = 'Input' in t ? t.Input : undefined
     const Select = 'Select' in t ? t.Select : undefined
-    const width = Math.max(30, e.props.bodyColumns)
-    const isTerminal = e.surface === 'terminal'
+    // One column of margin either side. Issue rows and filter tabs carry a space of their own so
+    // their highlight clears the dot; they sit flush and the rest of the list view is padded to match.
+    const outer = Math.max(30, e.props.bodyColumns)
+    const width = outer - 2
 
     const repo = await read($, repoA)
     const view = await read($, viewA)
@@ -214,8 +217,7 @@ export const register: Register = on => {
     const error = await read($, errorA)
 
     const rule = <Text color="subtle">{'─'.repeat(width)}</Text>
-    const hints = (items: string[]) =>
-      isTerminal ? <Text color="subtle">{items.join(' · ')}</Text> : null
+    const pad = (node: JSX.Element | null) => (node ? <Box paddingLeft={1}>{node}</Box> : null)
     const status =
       busy || error ? (
         <Box flexDirection="column">
@@ -238,7 +240,7 @@ export const register: Register = on => {
 
     if (!repo) {
       return (
-        <Box flexDirection="column" gap={1} width={width}>
+        <Box flexDirection="column" gap={1} width={outer} paddingX={1}>
           {header('')}
           <Text color="subtle">No GitHub repository is known for this directory.</Text>
           {status}
@@ -266,7 +268,7 @@ export const register: Register = on => {
       )
       if (!d) {
         return (
-          <Box flexDirection="column" gap={1} width={width}>
+          <Box flexDirection="column" gap={1} width={outer} paddingX={1}>
             {header('')}
             {nav}
             {status}
@@ -280,7 +282,7 @@ export const register: Register = on => {
       const nComments = `${d.comments.length} ${d.comments.length === 1 ? 'comment' : 'comments'}`
 
       return (
-        <Box flexDirection="column" gap={1} width={width}>
+        <Box flexDirection="column" gap={1} width={outer} paddingX={1}>
           {header(`#${d.number}`)}
           {nav}
           <Box flexDirection="column">
@@ -336,7 +338,7 @@ export const register: Register = on => {
               <Text color="subtle">· {ago(d.createdAt)} ago</Text>
             </Text>
             <Box paddingLeft={2}>
-              <Markdown text={d.body.trim() || '_No description provided._'} />
+              <Markdown text={imagesToLinks(d.body.trim()) || '_No description provided._'} />
             </Box>
           </Box>
           {d.comments.map((c, i) => (
@@ -346,7 +348,7 @@ export const register: Register = on => {
                 <Text color="subtle">· {ago(c.createdAt)} ago</Text>
               </Text>
               <Box paddingLeft={2}>
-                <Markdown text={c.body.trim() || '_empty comment_'} />
+                <Markdown text={imagesToLinks(c.body.trim()) || '_empty comment_'} />
               </Box>
             </Box>
           ))}
@@ -363,7 +365,6 @@ export const register: Register = on => {
               />
             </Box>
           )}
-          {hints(['w work', 'c close', 'b back', 'r refresh', 'tab next control'])}
         </Box>
       )
     }
@@ -374,7 +375,7 @@ export const register: Register = on => {
       const patch = (p: Partial<IssueDraft>) => void update($, draftA, old => ({ ...old, ...p }))
 
       return (
-        <Box flexDirection="column" gap={1} width={width}>
+        <Box flexDirection="column" gap={1} width={outer} paddingX={1}>
           {header('new issue')}
           {Input ? (
             <>
@@ -446,8 +447,8 @@ export const register: Register = on => {
     const filterName = FILTERS.find(f => f.value === filter)?.label.toLowerCase() ?? ''
 
     return (
-      <Box flexDirection="column" gap={1} width={width}>
-        {header(`${issues.length} ${filterName}`)}
+      <Box flexDirection="column" gap={1} width={outer} paddingRight={1}>
+        {pad(header(`${issues.length} ${filterName}`))}
         <Box flexDirection="row" gap={2} flexWrap="wrap">
           {FILTERS.map(f => (
             <Button key={`filter-${f.value}`} plain onPress={() => void pickFilter(f.value)}>
@@ -462,9 +463,9 @@ export const register: Register = on => {
             </Button>
           ))}
         </Box>
-        {rule}
-        {status}
-        {issues.length === 0 && !busy && <Text color="subtle">No issues match this filter.</Text>}
+        {pad(rule)}
+        {pad(status)}
+        {issues.length === 0 && !busy && pad(<Text color="subtle">No issues match this filter.</Text>)}
         <Box flexDirection="column">
           {issues.map(issue => {
             const isOpen = issue.state === 'OPEN'
@@ -473,7 +474,7 @@ export const register: Register = on => {
             const labels = issue.labels.map(l => ` [${l}]`).join('')
             const num = `#${issue.number}`
             // ' ● #n title [labels] meta ': a space either side keeps the dot off the edge of the highlight
-            const room = width - 6 - num.length - labels.length - meta.length
+            const room = outer - 6 - num.length - labels.length - meta.length
             const title =
               room > 8 && issue.title.length > room ? `${issue.title.slice(0, room - 1)}…` : issue.title
 
@@ -488,7 +489,7 @@ export const register: Register = on => {
             )
           })}
         </Box>
-        <Box flexDirection="row" gap={1}>
+        <Box flexDirection="row" gap={1} paddingLeft={1}>
           <Button key="new" hotkey="n" variant="primary" onPress={() => void openNew($)}>
             + New issue
           </Button>
@@ -496,7 +497,6 @@ export const register: Register = on => {
             Refresh
           </Button>
         </Box>
-        {hints(['enter open', 'n new issue', 'r refresh', 'tab next'])}
       </Box>
     )
   })
