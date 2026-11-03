@@ -27,12 +27,21 @@ and Claude Code started inside a clone of a GitHub repository.
 - **Filter** by open, assigned to me, created by me, closed or all.
 - **Read** an issue with its labels, assignees and comments, rendered as Markdown. Images
   show as `↗ image` links that open in the browser.
+- **See and edit the issue's details**, as in GitHub's sidebar: type, fields, projects,
+  milestone, relationships (parent, sub-issues, blocked by, blocking) and development
+  (linked branches and pull requests). `e` opens the editor, where chips toggle a value and
+  related issues are added by number or URL; a related issue opens with a click.
+- **Set them on a new issue** too: type, fields, projects, milestone, parent and blockers.
 - **Comment, close or reopen** without leaving the terminal.
 - **Work on this issue** (`w`) asks Claude to read the issue, branch, implement, test and
   commit. It never pushes, opens a pull request or touches the issue unless you ask.
 
-Keys in the pane: `n` new issue, `r` refresh, `b` back, `c` close, `w` work on it, `Tab` to
-move, `Esc` back to the prompt.
+Keys in the pane: `n` new issue, `r` refresh, `b` back, `e` edit details, `c` close, `w` work
+on it, `Tab` to move, `Esc` back to the prompt.
+
+Issue types and fields exist only in repositories owned by an organization. Projects need
+the `project` scope on your gh token: `gh auth refresh -s project`. Without it the pane
+still shows everything else.
 
 You can also just ask in the chat, for example *"show me the open bugs"* or *"file an issue
 about the slow start-up"*.

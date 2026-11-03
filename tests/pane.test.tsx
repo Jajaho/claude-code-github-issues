@@ -34,7 +34,47 @@ const DETAIL = {
   createdAt: '2026-10-30T10:00:00Z',
   url: 'https://github.com/acme/widgets/issues/7',
   comments: [{ author: { login: 'bob' }, body: 'Seen here too.', createdAt: '2026-10-31T10:00:00Z' }],
+  id: 'I_7',
+  issueType: { name: 'Bug' },
+  milestone: { title: 'v1.0', dueOn: '2026-12-01T00:00:00Z' },
+  parent: { number: 2, title: 'Config overhaul', state: 'OPEN', url: 'https://github.com/acme/widgets/issues/2' },
+  subIssues: { nodes: [], totalCount: 0 },
+  subIssuesSummary: { completed: 0, total: 0 },
+  blockedBy: {
+    nodes: [{ number: 3, title: 'Schema first', state: 'OPEN', url: 'https://github.com/acme/widgets/issues/3' }],
+  },
+  blocking: { nodes: [] },
 }
+const PRIORITY = {
+  __typename: 'IssueFieldSingleSelect',
+  id: 'F_prio',
+  name: 'Priority',
+  options: [{ id: 'O_p1', name: 'P1' }, { id: 'O_p2', name: 'P2' }],
+}
+const EFFORT = { __typename: 'IssueFieldNumber', id: 'F_effort', name: 'Effort' }
+const EXTRAS = {
+  repository: {
+    issue: {
+      issueFieldValues: {
+        nodes: [{ name: 'P2', optionId: 'O_p2', field: { id: 'F_prio', name: 'Priority' } }],
+      },
+      linkedBranches: { nodes: [{ ref: { name: '7-crash-on-empty-config' } }] },
+      closedByPullRequestsReferences: {
+        nodes: [
+          { number: 9, title: 'Guard empty config', state: 'OPEN', isDraft: false, url: 'https://github.com/acme/widgets/pull/9' },
+        ],
+      },
+    },
+  },
+}
+const OPTIONS = {
+  repository: {
+    issueTypes: { nodes: [{ name: 'Bug', isEnabled: true }, { name: 'Feature', isEnabled: true }] },
+    issueFields: { nodes: [PRIORITY, EFFORT] },
+    milestones: { nodes: [{ title: 'v1.0', dueOn: '2026-12-01T00:00:00Z' }, { title: 'v2.0', dueOn: null }] },
+  },
+}
+const NO_SCOPE = 'error: your authentication token is missing required scopes [read:project]\n'
 
 const run = (args: string) => ({
   command: 'issues',
@@ -48,22 +88,39 @@ const runIssues = ($: { command: { run: (i: ReturnType<typeof run>) => Promise<u
 type Call = { argv: readonly string[]; stdin?: string }
 
 /** Stands in for gh: answers by subcommand and records every call. */
-function fakeGh(on: On, calls: Call[], onSubmit: (text: string) => void = () => {}) {
+function fakeGh(
+  on: On,
+  calls: Call[],
+  onSubmit: (text: string) => void = () => {},
+  { projectScope = true } = {},
+) {
   on('process.run', (_, e) => {
     calls.push({ argv: e.argv, stdin: e.init?.stdin })
     const [, group, verb] = e.argv
-    const out = (stdout: unknown) => ({
+    const out = (stdout: unknown, exitCode = 0, stderr = '') => ({
       value: {
-        exitCode: 0,
+        exitCode,
         stdout: typeof stdout === 'string' ? stdout : JSON.stringify(stdout),
-        stderr: '',
+        stderr,
         isStdoutTruncated: false,
         isStderrTruncated: false,
       },
     })
+    const wantsProjects = group === 'project' || e.argv.includes('projectItems')
+    if (wantsProjects && !projectScope) return out('', 1, NO_SCOPE)
     if (group === 'repo') return out(REPO)
     if (group === 'label') return out([{ name: 'bug' }, { name: 'enhancement' }])
+    if (group === 'project') return out({ projects: [{ title: 'Roadmap', closed: false }], totalCount: 1 })
+    if (group === 'api') {
+      const query = String(JSON.parse(e.init?.stdin ?? '{}').query ?? '')
+      if (query.includes('setIssueFieldValue')) return out({ data: { setIssueFieldValue: { clientMutationId: null } } })
+      return out({ data: query.includes('issueTypes') ? OPTIONS : EXTRAS })
+    }
     if (verb === 'list') return out(ROWS)
+    if (verb === 'view' && e.argv.includes('projectItems')) {
+      return out({ projectItems: [{ title: 'Roadmap', status: { optionId: 's1', name: 'In progress' } }] })
+    }
+    if (verb === 'view' && e.argv[e.argv.length - 1] === 'id') return out({ id: 'I_8' })
     if (verb === 'view') return out(DETAIL)
     if (verb === 'create') return out('https://github.com/acme/widgets/issues/8\n')
 
@@ -161,5 +218,107 @@ test('work on this issue submits a prompt naming the issue', async ($, on) => {
   await ui.press({ key: 'work' })
   expect(submitted).toContain('GitHub issue #7 of acme/widgets')
   expect(submitted).toContain('Do not push')
+  await ui.unmount()
+})
+
+test('the detail view shows type, fields, projects, milestone, relationships and development', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls)
+  await runIssues($, '7')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  for (const text of [/^Bug$/, /Priority P2/, /Roadmap · In progress/, /v1\.0 · due 2026-12-01/, /7-crash-on-empty-config/]) {
+    expect((await ui.find({ type: 'Text', text }))?.text).toMatch(text)
+  }
+  expect(await ui.find({ type: 'Link', text: /#9 Guard empty config \(open\)/ })).toBeDefined()
+  expect(await ui.find({ key: 'rel-parent-2' })).toBeDefined()
+  await ui.press({ key: 'rel-blockedBy-3' })
+  expect(calls.some(c => c.argv.join(' ').startsWith('gh issue view 3'))).toBe(true)
+  await ui.unmount()
+})
+
+test('a token without the project scope hides projects, not the issue', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls, undefined, { projectScope: false })
+  await runIssues($, '7')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Crash on empty config/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Bug$/ })).toBeDefined()
+  await ui.press({ key: 'edit' })
+  expect(await ui.find({ type: 'Text', text: /gh auth refresh -s project/ })).toBeDefined()
+  expect(await ui.find({ key: 'type-Feature' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the edit view sets type, milestone, projects, fields and relationships through gh', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls)
+  await runIssues($, '7')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'edit' })
+  const edits = () => calls.filter(c => c.argv[2] === 'edit').map(c => c.argv.slice(3))
+
+  await ui.press({ key: 'type-Feature' })
+  await ui.press({ key: 'type-Bug' })
+  await ui.press({ key: 'milestone-v1.0' })
+  await ui.press({ key: 'milestone-v2.0' })
+  await ui.press({ key: 'project-Roadmap' })
+  await ui.press({ key: 'unrel-parent-2' })
+  await ui.press({ key: 'relkind-sub' })
+  await ui.input({ key: 'relation', text: '#12' })
+  const R = ['--repo', 'acme/widgets']
+  expect(edits()).toEqual([
+    ['7', ...R, '--type', 'Feature'],
+    ['7', ...R, '--remove-type'],
+    ['7', ...R, '--remove-milestone'],
+    ['7', ...R, '--milestone', 'v2.0'],
+    ['7', ...R, '--remove-project', 'Roadmap'],
+    ['7', ...R, '--remove-parent'],
+    ['7', ...R, '--add-sub-issue', '12'],
+  ])
+
+  await ui.press({ key: 'field-F_prio-O_p1' })
+  await ui.input({ key: 'field-F_effort', text: '3' })
+  const sets = calls
+    .filter(c => c.argv[1] === 'api' && c.stdin?.includes('setIssueFieldValue'))
+    .map(c => JSON.parse(c.stdin ?? '{}').variables.input)
+  expect(sets).toEqual([
+    { issueId: 'I_7', issueFields: [{ fieldId: 'F_prio', singleSelectOptionId: 'O_p1' }] },
+    { issueId: 'I_7', issueFields: [{ fieldId: 'F_effort', numberValue: 3 }] },
+  ])
+
+  await ui.press({ key: 'develop' })
+  expect(calls.some(c => c.argv.join(' ') === 'gh issue develop 7 --repo acme/widgets')).toBe(true)
+  await ui.unmount()
+})
+
+test('a new issue carries type, milestone, project, parent and blocker, then its fields', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls)
+  await runIssues($, 'new')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.input({ key: 'new-title', text: 'Dark mode', kind: 'change' })
+  await ui.press({ key: 'new-type-Feature' })
+  await ui.press({ key: 'new-milestone-v2.0' })
+  await ui.press({ key: 'new-project-Roadmap' })
+  await ui.press({ key: 'new-field-F_prio-O_p1' })
+  await ui.press({ key: 'new-relkind-parent' })
+  await ui.input({ key: 'new-relation', text: '#2' })
+  await ui.press({ key: 'new-relkind-blockedBy' })
+  await ui.input({ key: 'new-relation', text: '3' })
+  await ui.press({ key: 'create' })
+
+  const created = calls.find(c => c.argv[2] === 'create')
+  expect(created?.argv.slice(9)).toEqual([
+    '--type', 'Feature', '--milestone', 'v2.0', '--project', 'Roadmap', '--parent', '2', '--blocked-by', '3',
+  ])
+  const set = calls.find(c => c.stdin?.includes('setIssueFieldValue'))
+  expect(JSON.parse(set?.stdin ?? '{}').variables.input).toEqual({
+    issueId: 'I_8',
+    issueFields: [{ fieldId: 'F_prio', singleSelectOptionId: 'O_p1' }],
+  })
   await ui.unmount()
 })

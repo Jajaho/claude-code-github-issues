@@ -1,6 +1,6 @@
 ---
 name: github-issues
-description: View, create, comment on, label, assign, close, reopen and work on GitHub issues of the current repository with the gh CLI. Use when the user mentions an issue number (#42), asks to list or show issues or bugs, file or open an issue, comment on, close or reopen one, or to work on / fix / implement an issue.
+description: View, create, comment on, label, assign, close, reopen and work on GitHub issues of the current repository with the gh CLI, including their type, fields, projects, milestone, relationships (parent, sub-issues, blocked by) and linked branches. Use when the user mentions an issue number (#42), asks to list or show issues or bugs, file or open an issue, comment on, close or reopen one, set its type, milestone, project, parent or blockers, or to work on / fix / implement an issue.
 ---
 
 # GitHub issues with gh
@@ -28,6 +28,19 @@ with shell-escaped Markdown.
 - Close: `gh issue close 42 --reason completed` (or `"not planned"`); optional `--comment "…"`
 - Reopen: `gh issue reopen 42`
 - Labels and assignees: `gh issue edit 42 --add-label x --remove-label y --add-assignee @me`
+- Type and milestone: `gh issue edit 42 --type Bug` / `--remove-type`, `--milestone "v1.0"` /
+  `--remove-milestone`. Types exist only in organization repositories.
+- Projects: `gh issue edit 42 --add-project "Roadmap"` / `--remove-project`; needs the
+  `project` token scope (`gh auth refresh -s project`).
+- Relationships: `gh issue edit 42 --parent 7` / `--remove-parent`, `--add-sub-issue 43`,
+  `--add-blocked-by 40`, `--add-blocking 44` (each with a `--remove-` twin). `gh issue create`
+  takes `--type`, `--milestone`, `--project`, `--parent`, `--blocked-by` and `--blocking`.
+  Read them with `gh issue view 42 --json issueType,milestone,parent,subIssues,blockedBy,blocking`.
+- Development: `gh issue develop 42 --list` lists linked branches; `gh issue develop 42`
+  creates one on GitHub (`--checkout` to switch to it, only when the user wants that).
+- Issue fields (organization-defined, such as Priority) are not in gh: read
+  `issueFieldValues` and set them with the `setIssueFieldValue` mutation through
+  `gh api graphql`.
 
 Creating, commenting on, closing and reopening are visible to everyone with access to the
 repository. Show the title and body (or the comment) and get confirmation before posting,
