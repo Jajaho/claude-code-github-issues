@@ -362,6 +362,15 @@ export async function projectList($: EngineInterface, repo: string): Promise<str
   return (out.projects ?? []).filter(p => p.title && !p.closed).map(p => p.title ?? '')
 }
 
+/** Creates an open milestone in the repository and returns its title as GitHub stored it. */
+export async function milestoneCreate($: EngineInterface, repo: string, title: string): Promise<string> {
+  const made = await ghJson<{ title?: string }>($, [
+    'api', `repos/${repo}/milestones`, '--method', 'POST', '-f', `title=${title}`,
+  ])
+
+  return made.title ?? title
+}
+
 /** Turns gh's message for a missing token scope into the command that grants it. */
 export function scopeHint(message: string): string {
   return /scope/i.test(message)

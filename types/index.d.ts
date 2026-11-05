@@ -88,9 +88,11 @@ export type IssueDraft = {
   parent: string
   blockedBy: string[]
   blocking: string[]
+  /** Create a branch on GitHub linked to the issue once it exists (`gh issue develop`). */
+  branch: boolean
 }
 /** What issueCreate passes to gh. */
-export type NewIssue = Omit<IssueDraft, 'fields'>
+export type NewIssue = Omit<IssueDraft, 'fields' | 'branch'>
 
 declare module 'claude-code' {
   interface PluginState {
@@ -111,6 +113,8 @@ declare module 'claude-code' {
       relationInput: string
       /** Text typed into an issue field's box in the edit view, by field id, until it is set. */
       fieldText: Shaped<Record<string, string>>
+      /** The title typed for a new milestone. */
+      milestoneInput: string
     }
   }
 }

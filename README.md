@@ -31,7 +31,8 @@ and Claude Code started inside a clone of a GitHub repository.
   milestone, relationships (parent, sub-issues, blocked by, blocking) and development
   (linked branches and pull requests). `e` opens the editor, where chips toggle a value and
   related issues are added by number or URL; a related issue opens with a click.
-- **Set them on a new issue** too: type, fields, projects, milestone, parent and blockers.
+- **Set them on a new issue** too: type, fields, projects, milestone, parent and blockers,
+  and a linked branch made once it exists. A milestone can be created from the form.
 - **Comment, close or reopen** without leaving the terminal.
 - **Work on this issue** (`w`) asks Claude to read the issue, branch, implement, test and
   commit. It never pushes, opens a pull request or touches the issue unless you ask.
@@ -39,7 +40,8 @@ and Claude Code started inside a clone of a GitHub repository.
 Keys in the pane: `n` new issue, `r` refresh, `b` back, `e` edit details, `c` close, `w` work
 on it, `Tab` to move, `Esc` back to the prompt.
 
-Issue types and fields exist only in repositories owned by an organization. Projects need
+Issue types and fields exist only in repositories owned by an organization; elsewhere the
+pane leaves them out. Projects need
 the `project` scope on your gh token: `gh auth refresh -s project`. Without it the pane
 still shows everything else.
 

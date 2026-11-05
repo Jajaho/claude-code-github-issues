@@ -27,6 +27,7 @@ import {
   issueSetFields,
   issueView,
   labelList,
+  milestoneCreate,
   projectList,
   repoOptions,
   repoView,
@@ -58,13 +59,15 @@ const EMPTY_DRAFT: IssueDraft = {
   parent: '',
   blockedBy: [],
   blocking: [],
+  branch: false,
 }
-const draftA = atom({ plugin: 'gh-issues', key: 'draft' } as const, EMPTY_DRAFT, { shape: 'draft-3' })
+const draftA = atom({ plugin: 'gh-issues', key: 'draft' } as const, EMPTY_DRAFT, { shape: 'draft-4' })
 const commentA = atom({ plugin: 'gh-issues', key: 'comment' } as const, '')
 const labelsA = atom({ plugin: 'gh-issues', key: 'labels' } as const, [], { shape: 'labels-1' })
 const relationA = atom({ plugin: 'gh-issues', key: 'relation' } as const, 'blockedBy' as RelationKind)
 const relationInputA = atom({ plugin: 'gh-issues', key: 'relationInput' } as const, '')
 const fieldTextA = atom({ plugin: 'gh-issues', key: 'fieldText' } as const, {}, { shape: 'field-text-1' })
+const milestoneInputA = atom({ plugin: 'gh-issues', key: 'milestoneInput' } as const, '')
 
 const FILTERS: { value: IssueFilter; label: string }[] = [
   { value: 'open', label: 'Open' },
@@ -291,6 +294,23 @@ async function removeRelation($: EngineInterface, number: number, kind: Relation
   await editIssue($, number, `${rel.label.toLowerCase()} #${other.number} removed`, flags)
 }
 
+/** Creates an open milestone and reads the options again; resolves to its title, or '' on failure. */
+async function addMilestone($: EngineInterface, text: string): Promise<string> {
+  const repo = await read($, repoA)
+  const title = text.trim()
+  if (!repo || !title) return ''
+  let made = ''
+  const ok = await act($, `creating milestone ${title}`, async () => {
+    made = await milestoneCreate($, repo.nameWithOwner, title)
+  })
+  if (!ok) return ''
+  await update($, milestoneInputA, () => '')
+  void $.ui.toast(`milestone ${made} created`)
+  await loadOptions($, true)
+
+  return made
+}
+
 async function develop($: EngineInterface, number: number): Promise<void> {
   const repo = await read($, repoA)
   if (!repo) return
@@ -311,7 +331,7 @@ async function createIssue($: EngineInterface): Promise<void> {
     await update($, errorA, () => 'new issue: title is empty')
     return
   }
-  const { fields, ...rest } = draft
+  const { fields, branch, ...rest } = draft
   let number = 0
   const ok = await act($, 'creating issue', async () => {
     number = await issueCreate($, repo.nameWithOwner, {
@@ -338,6 +358,11 @@ async function createIssue($: EngineInterface): Promise<void> {
   if (sets.length > 0) {
     await act($, `setting fields of #${number}`, async () => {
       await issueSetFields($, await issueId($, repo.nameWithOwner, number), sets)
+    })
+  }
+  if (branch) {
+    await act($, `creating a branch for #${number}`, async () => {
+      await issueDevelop($, repo.nameWithOwner, number)
     })
   }
   const error = await read($, errorA)
@@ -427,18 +452,21 @@ export const register: Register = on => {
     const rule = <Text color="subtle">{'─'.repeat(width)}</Text>
     const pad = (node: JSX.Element | null) => (node ? <Box paddingLeft={1}>{node}</Box> : null)
     const note = (text: string) => pad(<Text color="subtle">{text}</Text>)
-    // An Input sizes its text to the pane's full width minus its own Enter hint, not to the Box it
-    // sits in: inside a border or padding its line ends run under the hint and vanish. So a field
-    // spans the whole pane, framed by rules above and below as the prompt box is, never at the sides.
-    const edge = <Text color="promptBorder">{'─'.repeat(outer)}</Text>
-    const field = (caption: string | null, input: JSX.Element) => (
+    // The terminal sizes an Input's text to the pane's full width minus its label and its Enter hint,
+    // whatever Box holds it: padding around it pushes its line ends under the hint. So the Input
+    // spans the pane and keeps its margins itself: its label starts with a space, and a one-line
+    // field's hint ends with one. The rules above and below are inset by one column to match.
+    const edge = pad(<Text color="promptBorder">{'─'.repeat(width)}</Text>)
+    const field = (input: JSX.Element) => (
       <Box flexDirection="column" width={outer}>
-        {caption !== null && pad(<Text color="subtle">{caption}</Text>)}
         {edge}
         {input}
         {edge}
       </Box>
     )
+    const inLabel = (text: string) => ` ${text}`
+    // A field of several lines shows "· shift+⏎ new line" after its hint, so only one-line ones get the space.
+    const oneLine = (submit: string) => `${submit} `
     // A toggle chip, as the label chips of the new issue form: a space either side so they sit flush.
     const chip = (key: string, picked: boolean, text: string, onPress: () => void) => (
       <Button key={key} plain onPress={onPress}>
@@ -558,6 +586,7 @@ export const register: Register = on => {
         const relation = await read($, relationA)
         const relationInput = await read($, relationInputA)
         const fieldText = await read($, fieldTextA)
+        const milestoneInput = await read($, milestoneInputA)
         const values = side?.extras?.fields ?? []
         const onProjects = side?.projects?.map(p => p.title) ?? []
         const fieldEditor = (f: FieldDef) => {
@@ -588,11 +617,11 @@ export const register: Register = on => {
           return (
             <Box key={`fieldbox-${f.id}`} flexDirection="column" width={outer}>
               {field(
-                `${f.name} · Enter sets it, empty clears it`,
                 <Input
                   key={`field-${f.id}`}
-                  placeholder={hint}
-                  submitLabel="set"
+                  label={inLabel(f.name)}
+                  placeholder={`${hint} · empty clears it`}
+                  submitLabel={oneLine('set')}
                   value={fieldText[f.id] ?? current?.value ?? ''}
                   onInput={value => void update($, fieldTextA, old => ({ ...old, [f.id]: value }))}
                   onSubmit={value => void setField($, d, { field: f, text: value })}
@@ -608,6 +637,12 @@ export const register: Register = on => {
           ...d.blocking.map(r => ({ kind: 'blocking' as const, label: 'Blocking', r })),
         ]
         const extras = side?.extras
+        // The type set on the issue stays pickable even if the organization has since disabled it.
+        const types = [
+          ...(options?.types ?? []),
+          ...(options?.types && d.type && !options.types.includes(d.type) ? [d.type] : []),
+        ]
+        const fieldDefs = options?.fields ?? []
 
         return (
           <Box flexDirection="column" gap={1} width={outer}>
@@ -619,34 +654,31 @@ export const register: Register = on => {
             </Box>
             {!options && !busy && note('Loading what this repository offers…')}
 
-            {section(
-              'Type',
-              options?.types === null
-                ? note('No issue types: an organization sets them up for its repositories.')
-                : chips(
-                    (options?.types ?? []).map(type =>
-                      chip(`type-${type}`, d.type === type, type, () =>
-                        void editIssue(
-                          $,
-                          d.number,
-                          d.type === type ? 'type removed' : `type set to ${type}`,
-                          d.type === type ? ['--remove-type'] : ['--type', type],
-                        ),
+            {/* Types and fields exist only where an organization set them up: elsewhere, no section. */}
+            {types.length > 0 &&
+              section(
+                'Type',
+                chips(
+                  types.map(type =>
+                    chip(`type-${type}`, d.type === type, type, () =>
+                      void editIssue(
+                        $,
+                        d.number,
+                        d.type === type ? 'type removed' : `type set to ${type}`,
+                        d.type === type ? ['--remove-type'] : ['--type', type],
                       ),
                     ),
                   ),
-            )}
+                ),
+              )}
 
-            {section(
-              'Fields',
-              ...(options?.fields === null
-                ? [note('No issue fields: an organization sets them up for its repositories.')]
-                : options?.fields?.length === 0
-                  ? [note('This organization defines no issue fields.')]
-                  : side && !side.extras
-                    ? [note(`Fields could not be read: ${side.extrasNote}`)]
-                    : (options?.fields ?? []).map(fieldEditor)),
-            )}
+            {fieldDefs.length > 0 &&
+              section(
+                'Fields',
+                ...(side && !side.extras
+                  ? [note(`Fields could not be read: ${side.extrasNote}`)]
+                  : fieldDefs.map(fieldEditor)),
+              )}
 
             {section(
               'Projects',
@@ -671,7 +703,7 @@ export const register: Register = on => {
             {section(
               'Milestone',
               options?.milestones.length === 0 && !d.milestone
-                ? note('No open milestones.')
+                ? note('No open milestones yet.')
                 : chips(
                     [
                       ...(options?.milestones ?? []),
@@ -690,6 +722,24 @@ export const register: Register = on => {
                       )
                     }),
                   ),
+              Input
+                ? field(
+                    <Input
+                      key="milestone-new"
+                      label={inLabel('New milestone')}
+                      placeholder="title"
+                      submitLabel={oneLine('create')}
+                      value={milestoneInput}
+                      onInput={value => void update($, milestoneInputA, () => value)}
+                      onSubmit={async value => {
+                        const title = await addMilestone($, value)
+                        if (title) {
+                          await editIssue($, d.number, `milestone set to ${title}`, ['--milestone', title])
+                        }
+                      }}
+                    />,
+                  )
+                : null,
             )}
 
             {section(
@@ -717,11 +767,11 @@ export const register: Register = on => {
               ),
               Input
                 ? field(
-                    null,
                     <Input
                       key="relation"
-                      placeholder={`Add: ${RELATIONS.find(r => r.kind === relation)?.label.toLowerCase()} issue number or URL`}
-                      submitLabel="add"
+                      label={inLabel('Add')}
+                      placeholder={`${RELATIONS.find(r => r.kind === relation)?.label.toLowerCase()}: issue number or URL`}
+                      submitLabel={oneLine('add')}
                       value={relationInput}
                       onInput={value => void update($, relationInputA, () => value)}
                       onSubmit={value => void addRelation($, d.number, value)}
@@ -914,10 +964,10 @@ export const register: Register = on => {
           </Box>
           {Input &&
             field(
-              null,
               <Input
                 key="comment"
-                placeholder="Add a comment (Markdown)"
+                label={inLabel('Comment')}
+                placeholder="Markdown"
                 rows={3}
                 submitLabel="post"
                 value={comment}
@@ -935,7 +985,8 @@ export const register: Register = on => {
       const options = await read($, optionsA)
       const relation = await read($, relationA)
       const relationInput = await read($, relationInputA)
-      const patch = (p: Partial<IssueDraft>) => void update($, draftA, old => ({ ...old, ...p }))
+      const milestoneInput = await read($, milestoneInputA)
+      const patch =(p: Partial<IssueDraft>) => void update($, draftA, old => ({ ...old, ...p }))
       const toggle = (list: readonly string[], item: string) =>
         list.includes(item) ? list.filter(x => x !== item) : [...list, item]
       const toggleLabel = (label: string) =>
@@ -986,21 +1037,21 @@ export const register: Register = on => {
           {Input ? (
             <>
               {field(
-                'Title',
                 <Input
                   key="new-title"
                   autoFocus
+                  label={inLabel('Title')}
                   placeholder="Short summary"
                   value={draft.title}
-                  submitLabel="next"
+                  submitLabel={oneLine('next')}
                   onInput={value => patch({ title: value })}
                   onSubmit={value => patch({ title: value })}
                 />,
               )}
               {field(
-                'Description',
                 <Input
                   key="new-body"
+                  label={inLabel('Description')}
                   placeholder="Markdown"
                   rows={8}
                   value={draft.body}
@@ -1062,11 +1113,11 @@ export const register: Register = on => {
             return (
               <Box key={`new-fieldbox-${f.id}`} flexDirection="column">
                 {field(
-                  f.name,
                   <Input
                     key={`new-field-${f.id}`}
+                    label={inLabel(f.name)}
                     placeholder={f.kind === 'date' ? 'YYYY-MM-DD' : f.kind === 'number' ? 'a number' : 'text'}
-                    submitLabel="next"
+                    submitLabel={oneLine('next')}
                     value={value[0] ?? ''}
                     onInput={text => setFieldDraft(f.id, [text])}
                     onSubmit={text => setFieldDraft(f.id, [text])}
@@ -1089,16 +1140,33 @@ export const register: Register = on => {
           ) : (
             options?.projectsNote && note(options.projectsNote)
           )}
-          {milestones.length > 0 && (
+          {options && (
             <Box flexDirection="column">
               {pad(<Text color="subtle">Milestone</Text>)}
-              {chips(
-                milestones.map(m =>
-                  chip(`new-milestone-${m.title}`, draft.milestone === m.title, milestoneText(m), () =>
-                    patch({ milestone: draft.milestone === m.title ? '' : m.title }),
-                  ),
-                ),
-              )}
+              {milestones.length > 0
+                ? chips(
+                    milestones.map(m =>
+                      chip(`new-milestone-${m.title}`, draft.milestone === m.title, milestoneText(m), () =>
+                        patch({ milestone: draft.milestone === m.title ? '' : m.title }),
+                      ),
+                    ),
+                  )
+                : note('No open milestones yet.')}
+              {Input &&
+                field(
+                  <Input
+                    key="new-milestone"
+                    label={inLabel('New milestone')}
+                    placeholder="title"
+                    submitLabel={oneLine('create')}
+                    value={milestoneInput}
+                    onInput={value => void update($, milestoneInputA, () => value)}
+                    onSubmit={async value => {
+                      const title = await addMilestone($, value)
+                      if (title) patch({ milestone: title })
+                    }}
+                  />,
+                )}
             </Box>
           )}
           {Input && (
@@ -1121,11 +1189,11 @@ export const register: Register = on => {
                 ),
               )}
               {field(
-                null,
                 <Input
                   key="new-relation"
-                  placeholder={`${NEW_RELATIONS.find(r => r.kind === newRelation)?.label} issue number or URL`}
-                  submitLabel="add"
+                  label={inLabel('Add')}
+                  placeholder={`${NEW_RELATIONS.find(r => r.kind === newRelation)?.label.toLowerCase()}: issue number or URL`}
+                  submitLabel={oneLine('add')}
                   value={relationInput}
                   onInput={value => void update($, relationInputA, () => value)}
                   onSubmit={addDraftRelation}
@@ -1133,6 +1201,13 @@ export const register: Register = on => {
               )}
             </Box>
           )}
+          <Box flexDirection="column">
+            {pad(<Text color="subtle">Development</Text>)}
+            {chips([
+              chip('new-branch', draft.branch, 'Create a linked branch', () => patch({ branch: !draft.branch })),
+            ])}
+            {draft.branch && note('Made on GitHub once the issue exists; not checked out.')}
+          </Box>
           <Box flexDirection="row" gap={1} paddingLeft={1}>
             <Button key="create" variant="primary" onPress={() => void createIssue($)}>
               Create issue

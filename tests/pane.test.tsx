@@ -74,6 +74,7 @@ const OPTIONS = {
     milestones: { nodes: [{ title: 'v1.0', dueOn: '2026-12-01T00:00:00Z' }, { title: 'v2.0', dueOn: null }] },
   },
 }
+const PERSONAL_OPTIONS = { repository: { issueTypes: null, issueFields: null, milestones: { nodes: [] } } }
 const NO_SCOPE = 'error: your authentication token is missing required scopes [read:project]\n'
 
 const run = (args: string) => ({
@@ -92,7 +93,7 @@ function fakeGh(
   on: On,
   calls: Call[],
   onSubmit: (text: string) => void = () => {},
-  { projectScope = true } = {},
+  { projectScope = true, personal = false } = {},
 ) {
   on('process.run', (_, e) => {
     calls.push({ argv: e.argv, stdin: e.init?.stdin })
@@ -111,10 +112,11 @@ function fakeGh(
     if (group === 'repo') return out(REPO)
     if (group === 'label') return out([{ name: 'bug' }, { name: 'enhancement' }])
     if (group === 'project') return out({ projects: [{ title: 'Roadmap', closed: false }], totalCount: 1 })
+    if (group === 'api' && verb?.endsWith('/milestones')) return out({ title: (e.argv.find(a => a.startsWith('title=')) ?? '').slice(6) })
     if (group === 'api') {
       const query = String(JSON.parse(e.init?.stdin ?? '{}').query ?? '')
       if (query.includes('setIssueFieldValue')) return out({ data: { setIssueFieldValue: { clientMutationId: null } } })
-      return out({ data: query.includes('issueTypes') ? OPTIONS : EXTRAS })
+      return out({ data: query.includes('issueTypes') ? (personal ? PERSONAL_OPTIONS : OPTIONS) : EXTRAS })
     }
     if (verb === 'list') return out(ROWS)
     if (verb === 'view' && e.argv.includes('projectItems')) {
@@ -320,5 +322,41 @@ test('a new issue carries type, milestone, project, parent and blocker, then its
     issueId: 'I_8',
     issueFields: [{ fieldId: 'F_prio', singleSelectOptionId: 'O_p1' }],
   })
+  await ui.unmount()
+})
+
+test('a personal repository shows no type or fields sections', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls, undefined, { personal: true })
+  await runIssues($, '7')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'edit' })
+  expect(await ui.find({ type: 'Text', text: /^Type$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Fields$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /issue (types|fields)/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Milestone$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Development$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a new issue in a repository without milestones creates one, and a linked branch', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls, undefined, { personal: true })
+  await runIssues($, 'new')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'new-type-Bug' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /No open milestones yet/ })).toBeDefined()
+  await ui.input({ key: 'new-title', text: 'Dark mode', kind: 'change' })
+  await ui.input({ key: 'new-milestone', text: 'v1.0' })
+  const made = calls.find(c => c.argv[2]?.endsWith('/milestones'))
+  expect(made?.argv).toEqual(['gh', 'api', 'repos/acme/widgets/milestones', '--method', 'POST', '-f', 'title=v1.0'])
+  await ui.press({ key: 'new-branch' })
+  await ui.press({ key: 'create' })
+
+  const created = calls.find(c => c.argv[2] === 'create')
+  expect(created?.argv.slice(9)).toEqual(['--milestone', 'v1.0'])
+  expect(calls.some(c => c.argv.join(' ') === 'gh issue develop 8 --repo acme/widgets')).toBe(true)
   await ui.unmount()
 })
