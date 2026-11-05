@@ -371,22 +371,123 @@ async function createIssue($: EngineInterface): Promise<void> {
   await loadList($)
 }
 
-function workPrompt(repo: string, d: IssueDetail, side: IssueSide | null): string {
+/** What an issue's Claude dropdown submits a prompt for; Ask… only fills the prompt box. */
+type ClaudeAction = 'discuss' | 'plan' | 'implement' | 'reply' | 'draft'
+
+/** The Claude dropdown's options, in the order drawn. */
+const CLAUDE_ACTIONS: { value: ClaudeAction | 'ask'; label: string }[] = [
+  { value: 'discuss', label: 'Discuss' },
+  { value: 'plan', label: 'Plan' },
+  { value: 'implement', label: 'Implement' },
+  { value: 'reply', label: 'Reply' },
+  { value: 'draft', label: 'Reply (Draft)' },
+  { value: 'ask', label: 'Ask…' },
+]
+/** The dropdown's resting option: picking it does nothing, so no action runs by accident. */
+const CLAUDE_REST = { value: 'choose', label: 'Choose an action…' }
+
+/** The tool through which Claude puts a draft comment into the pane's comment box. */
+const DRAFT_TOOL = 'draft_comment'
+const DRAFT_TOOL_FULL = 'mcp__gh-issues__draft_comment'
+
+/** The prompt a Claude button submits: the issue, how to read it, then what to do and not to do. */
+function claudePrompt(action: ClaudeAction, repo: string, d: IssueDetail, side: IssueSide | null): string {
   const branches = side?.number === d.number ? (side.extras?.branches ?? []) : []
   const blockers = d.blockedBy.filter(b => b.state === 'OPEN').map(b => `#${b.number}`)
+  const issue = `GitHub issue #${d.number} of ${repo}: "${d.title}" (${d.url})`
+  const readIt = `Read it with \`gh issue view ${d.number} --repo ${repo} --comments\`, and the code it concerns.`
+  const blocked = blockers.length > 0 ? [`It is blocked by ${blockers.join(', ')}, still open.`] : []
+  const hands = 'Do not edit files, create a branch or write to GitHub.'
+  const comment =
+    'Write a comment that answers the latest open question or request in the thread, or else says where the ' +
+    'issue stands and proposes a way forward: Markdown, short and concrete, in the language of the thread.'
 
-  return [
-    `Work on GitHub issue #${d.number} of ${repo}: "${d.title}" (${d.url}).`,
-    `Read it with \`gh issue view ${d.number} --repo ${repo} --comments\`.`,
-    branches.length > 0
-      ? `It has a linked branch on GitHub (${branches.join(', ')}): fetch and check that out instead of creating a new one.`
-      : `Follow this repository's CLAUDE.md rules for branches and commits; where none exist, create a branch named issue-${d.number}-<short-slug> from the default branch.`,
-    ...(blockers.length > 0
-      ? [`It is blocked by ${blockers.join(', ')}, still open: say so before starting if that matters.`]
-      : []),
-    `Plan the change, implement it, run the relevant tests and commit, with "#${d.number}" in the commit message.`,
-    `Do not push, open a pull request, comment on or close the issue unless asked.`,
-  ].join('\n')
+  const lines: Record<ClaudeAction, string[]> = {
+    discuss: [
+      `Discuss ${issue} with me.`,
+      readIt,
+      ...blocked,
+      'Say in a few lines what it asks for and where it stands, list the open questions, and sketch two or ' +
+        'three ways to resolve it with their trade-offs. Then ask me which way to go.',
+      hands,
+    ],
+    plan: [
+      `Plan the work on ${issue}.`,
+      readIt,
+      ...blocked,
+      'Write a step-by-step plan: the files to change and how, the tests to add or run, risks and open questions.',
+      `${hands} Wait for me to approve the plan.`,
+    ],
+    implement: [
+      `Implement ${issue}.`,
+      `Read it with \`gh issue view ${d.number} --repo ${repo} --comments\`.`,
+      branches.length > 0
+        ? `It has a linked branch on GitHub (${branches.join(', ')}): fetch and check that out instead of creating a new one.`
+        : `Follow this repository's CLAUDE.md rules for branches and commits; where none exist, create a branch named issue-${d.number}-<short-slug> from the default branch.`,
+      ...(blockers.length > 0
+        ? [`It is blocked by ${blockers.join(', ')}, still open: say so before starting if that matters.`]
+        : []),
+      `Plan the change, implement it, run the relevant tests and commit, with "#${d.number}" in the commit message.`,
+      'Do not push, open a pull request, comment on or close the issue unless asked.',
+    ],
+    reply: [
+      `Reply to ${issue}.`,
+      readIt,
+      ...blocked,
+      comment,
+      `I pressed Reply in the GitHub issues pane, so post it without asking me again: ` +
+        `\`gh issue comment ${d.number} --repo ${repo} --body-file -\` with the text on stdin. Then show me what you posted.`,
+      'Do not edit files, or change, close or reopen the issue.',
+    ],
+    draft: [
+      `Draft a reply to ${issue}.`,
+      readIt,
+      ...blocked,
+      comment,
+      `Put it in the comment box of the GitHub issues pane with the ${DRAFT_TOOL_FULL} tool, for me to edit and ` +
+        'post. Do not post it yourself, edit files or change the issue.',
+    ],
+  }
+
+  return lines[action].join('\n')
+}
+
+/** Runs what was picked in the Claude dropdown: a prompt for Claude, or the Ask… line in the prompt box. */
+async function runClaude(
+  $: EngineInterface,
+  value: string,
+  repo: string,
+  d: IssueDetail,
+  side: IssueSide | null,
+): Promise<void> {
+  const picked = CLAUDE_ACTIONS.find(a => a.value === value)
+  if (!picked) return
+  if (picked.value === 'ask') return askAbout($, repo, d)
+  void $.prompt.submit({ text: claudePrompt(picked.value, repo, d, side) })
+  void $.ui.toast(`#${d.number}: ${picked.label} handed to Claude`)
+}
+
+/** Ask…: puts a line naming the issue at the head of the prompt box, for the person to finish. */
+async function askAbout($: EngineInterface, repo: string, d: IssueDetail): Promise<void> {
+  const lead = `About GitHub issue #${d.number} of ${repo} ("${d.title}"): `
+  const box = await $.prompt.read()
+  const text = box.text.startsWith(lead) ? box.text : lead + box.text
+  const { isFilled } = await $.prompt.fill({ text })
+  void $.ui.toast(isFilled ? `#${d.number}: Esc to the prompt and type your question` : 'No prompt box to fill')
+}
+
+/** Serves the draft tool: opens the issue in the pane and puts the text into its comment box. */
+async function placeDraft($: EngineInterface, number: number, body: string): Promise<string> {
+  await openPane($, false)
+  const shown = await read($, detailA)
+  if ((await read($, viewA)) !== 'detail' || shown?.number !== number) await openIssue($, number)
+  if ((await read($, detailA))?.number !== number) {
+    return `#${number} could not be opened: ${(await read($, errorA)) || 'unknown error'}`
+  }
+  await update($, commentA, () => body)
+  void $.ui.toast(`#${number}: Claude drafted a reply, review it in the comment box`)
+
+  return ''
 }
 
 const ago = (iso: string): string => {
@@ -415,8 +516,37 @@ export const register: Register = on => {
       description: 'Open the GitHub issues pane; with an issue number, open that issue',
       argumentHint: '[number | new]',
     })
+    await $.tool.register({
+      name: DRAFT_TOOL,
+      description:
+        'Puts a draft comment on a GitHub issue of the current repository into the comment box of the ' +
+        'GitHub issues pane, opening that issue there, for the person to edit and post. Posts nothing. ' +
+        'Use it when the person wants a reply drafted for review rather than posted.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          number: { type: 'integer', minimum: 1, description: 'The issue number.' },
+          body: { type: 'string', description: 'The comment, in Markdown.' },
+        },
+        required: ['number', 'body'],
+      },
+    })
 
     return next(e)
+  })
+
+  on('tool.call', { tool: DRAFT_TOOL_FULL }, async ($, e) => {
+    const number = Number(e.number)
+    const body = typeof e.body === 'string' ? e.body : ''
+    if (!Number.isInteger(number) || number < 1 || !body.trim()) {
+      return { deny: `${DRAFT_TOOL} needs an issue number and a comment that is not empty` }
+    }
+    const failed = await placeDraft($, number, body)
+    if (failed) return { deny: failed }
+
+    return {
+      result: `The draft is in the comment box of #${number} in the GitHub issues pane, not posted: the person edits and posts it from there.`,
+    }
   })
 
   on('command.run', { command: 'issues' }, async ($, e) => {
@@ -437,7 +567,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const t = $.ui.resolve(e)
-    const { Box, Text, Button, Link, Markdown } = t
+    const { Box, Text, Button, Link, Markdown, Select } = t
     const Input = 'Input' in t ? t.Input : undefined
     // One column of margin either side. Issue rows and filter tabs carry a space of their own so
     // their highlight clears the dot; they sit flush and the rest of the list view is padded to match.
@@ -884,6 +1014,17 @@ export const register: Register = on => {
             )),
           ),
       ].filter((row): row is JSX.Element => Boolean(row))
+      // A row of buttons under a caption in the meta rows' column, wrapping beside it, not under it.
+      const actionRow = (caption: string, ...buttons: JSX.Element[]) => (
+        <Box flexDirection="row" width={width}>
+          <Box width={LABEL} flexShrink={0}>
+            <Text color="subtle">{caption}</Text>
+          </Box>
+          <Box flexDirection="row" gap={1} flexWrap="wrap" flexShrink={1}>
+            {buttons}
+          </Box>
+        </Box>
+      )
 
       return (
         <Box flexDirection="column" gap={1} width={outer}>
@@ -908,36 +1049,37 @@ export const register: Register = on => {
               )}
             </Box>
             {meta.length > 0 && <Box flexDirection="column">{meta}</Box>}
-            <Box flexDirection="row" gap={1} flexWrap="wrap">
-              <Button
-                key="work"
-                hotkey="w"
-                variant="primary"
-                onPress={() => {
-                  void $.prompt.submit({ text: workPrompt(repo.nameWithOwner, d, side) })
-                  void $.ui.toast(`#${d.number}: handed to Claude`)
-                }}
-              >
-                Work on this issue
-              </Button>
-              <Button key="edit" hotkey="e" onPress={() => void openEdit($)}>
-                Edit details
-              </Button>
-              {isOpen ? (
-                <>
-                  <Button key="close" hotkey="c" onPress={() => void setState($, d.number, 'completed')}>
-                    Close as completed
-                  </Button>
-                  <Button key="close-np" onPress={() => void setState($, d.number, 'not planned')}>
-                    Close as not planned
-                  </Button>
-                </>
-              ) : (
-                <Button key="reopen" hotkey="o" onPress={() => void setState($, d.number, 'reopen')}>
-                  Reopen
-                </Button>
+            <Box flexDirection="column" gap={1}>
+              {actionRow(
+                'Claude',
+                <Select
+                  key="claude"
+                  options={[CLAUDE_REST, ...CLAUDE_ACTIONS]}
+                  value={CLAUDE_REST.value}
+                  onSelect={value => void runClaude($, value, repo.nameWithOwner, d, side)}
+                />,
               )}
-              <Link href={d.url} label="↗ GitHub" />
+              {actionRow(
+                'Issue',
+                <Button key="edit" hotkey="e" onPress={() => void openEdit($)}>
+                  Edit details
+                </Button>,
+                ...(isOpen
+                  ? [
+                      <Button key="close" hotkey="c" onPress={() => void setState($, d.number, 'completed')}>
+                        Close as completed
+                      </Button>,
+                      <Button key="close-np" onPress={() => void setState($, d.number, 'not planned')}>
+                        Close as not planned
+                      </Button>,
+                    ]
+                  : [
+                      <Button key="reopen" hotkey="o" onPress={() => void setState($, d.number, 'reopen')}>
+                        Reopen
+                      </Button>,
+                    ]),
+                <Link key="github" href={d.url} label="↗ GitHub" />,
+              )}
             </Box>
             {status}
             {rule}

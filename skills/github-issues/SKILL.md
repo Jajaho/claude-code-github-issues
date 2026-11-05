@@ -47,6 +47,10 @@ repository. Show the title and body (or the comment) and get confirmation before
 unless the user gave the exact text or explicitly asked to post without review. Never close an
 issue as a side effect of other work.
 
+When the user wants a comment drafted for review rather than posted, put it in the `/issues`
+pane's comment box with the `mcp__gh-issues__draft_comment` tool (`number`, `body`): it opens
+the issue there and posts nothing; the user edits and posts it.
+
 ## Work on an issue
 
 1. `gh issue view N --comments` and read the linked code.

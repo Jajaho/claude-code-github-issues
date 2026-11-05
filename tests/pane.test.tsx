@@ -208,7 +208,7 @@ test('two clicked labels are both passed to gh', async ($, on) => {
   await ui.unmount()
 })
 
-test('work on this issue submits a prompt naming the issue', async ($, on) => {
+test('picking implement in the Claude dropdown submits a prompt naming the issue', async ($, on) => {
   const calls: Call[] = []
   let submitted = ''
   fakeGh(on, calls, text => {
@@ -217,9 +217,75 @@ test('work on this issue submits a prompt naming the issue', async ($, on) => {
   await runIssues($, '#7')
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'work' })
-  expect(submitted).toContain('GitHub issue #7 of acme/widgets')
+  await ui.select({ key: 'claude', value: 'implement' })
+  expect(submitted).toStartWith('Implement GitHub issue #7 of acme/widgets')
   expect(submitted).toContain('Do not push')
+
+  submitted = ''
+  await ui.select({ key: 'claude', value: 'choose' })
+  expect(submitted).toBe('')
+  await ui.unmount()
+})
+
+test('discuss, plan, reply and reply (draft) each ask for their own thing', async ($, on) => {
+  const calls: Call[] = []
+  const submitted: string[] = []
+  fakeGh(on, calls, text => void submitted.push(text))
+  await runIssues($, '7')
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    submitted.length = 0
+    const ui = await $.ui.mount({ ...PANE, surface })
+    for (const value of ['discuss', 'plan', 'reply', 'draft']) await ui.select({ key: 'claude', value })
+    const [discuss, plan, reply, draft] = submitted
+    expect(discuss).toStartWith('Discuss GitHub issue #7 of acme/widgets')
+    expect(discuss).toContain('Do not edit files, create a branch or write to GitHub')
+    expect(plan).toStartWith('Plan the work on GitHub issue #7')
+    expect(plan).toContain('Wait for me to approve the plan')
+    expect(reply).toContain('gh issue comment 7 --repo acme/widgets --body-file -')
+    expect(reply).toContain('without asking me again')
+    expect(draft).toContain('mcp__gh-issues__draft_comment')
+    expect(draft).toContain('Do not post it yourself')
+    await ui.unmount()
+  }
+  expect(calls.some(c => c.argv[2] === 'comment')).toBe(false)
+})
+
+test('ask fills the prompt box with the issue ahead of what was typed, once', async ($, on) => {
+  const calls: Call[] = []
+  let box = 'why'
+  let submitted = ''
+  fakeGh(on, calls, text => {
+    submitted = text
+  })
+  on('prompt.read', () => ({ value: { text: box, cursor: box.length } }))
+  on('prompt.fill', (_, e) => {
+    box = e.text
+    return { isFilled: true }
+  })
+  await runIssues($, '7')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.select({ key: 'claude', value: 'ask' })
+  await ui.select({ key: 'claude', value: 'ask' })
+  expect(box).toBe('About GitHub issue #7 of acme/widgets ("Crash on empty config"): why')
+  expect(submitted).toBe('')
+  await ui.unmount()
+})
+
+test('the draft tool puts the comment into the pane, unposted', async ($, on) => {
+  const calls: Call[] = []
+  fakeGh(on, calls)
+  await runIssues($, '')
+
+  const done = await $.tool.call({ tool: 'mcp__gh-issues__draft_comment', number: 7, body: 'Looking into it.' })
+  expect('deny' in done && done.deny).toBeFalsy()
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ key: 'comment' }))?.props.value).toBe('Looking into it.')
+  expect(calls.some(c => c.argv[2] === 'comment')).toBe(false)
+
+  const empty = await $.tool.call({ tool: 'mcp__gh-issues__draft_comment', number: 7, body: ' ' })
+  expect('deny' in empty && empty.deny).toContain('not empty')
   await ui.unmount()
 })
 

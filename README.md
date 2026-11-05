@@ -1,7 +1,7 @@
 # GitHub Issues for Claude Code
 
 Browse, create and close GitHub issues in a pane beside your Claude Code chat, and hand any
-issue to Claude with one key.
+issue to Claude with one key: to discuss, plan, implement or reply to it.
 
 <p align="center">
   <img src="assets/pane.svg" alt="The GitHub issues pane in Claude Code: open issues of a repository with state, labels, assignee and age" width="720">
@@ -34,11 +34,22 @@ and Claude Code started inside a clone of a GitHub repository.
 - **Set them on a new issue** too: type, fields, projects, milestone, parent and blockers,
   and a linked branch made once it exists. A milestone can be created from the form.
 - **Comment, close or reopen** without leaving the terminal.
-- **Work on this issue** (`w`) asks Claude to read the issue, branch, implement, test and
-  commit. It never pushes, opens a pull request or touches the issue unless you ask.
+- **Hand the issue to Claude** from the issue's Claude dropdown: picking an action runs it,
+  and Claude reads the issue and its thread first.
+  - **Discuss**: what the issue asks, open questions and two or three ways to go, then
+    Claude asks you which. No edits, branches or GitHub writes.
+  - **Plan**: a step-by-step plan of files, tests and risks, for you to approve.
+  - **Implement**: branch, implement, test and commit. It never pushes, opens a pull request
+    or touches the issue unless you ask.
+  - **Reply**: Claude writes a comment and posts it.
+  - **Reply (Draft)**: Claude writes a comment into the pane's comment box, where you edit it
+    and post it yourself.
+  - **Ask…**: puts a line naming the issue in the prompt box; press `Esc` and type your own
+    question.
 
-Keys in the pane: `n` new issue, `r` refresh, `b` back, `e` edit details, `c` close, `w` work
-on it, `Tab` to move, `Esc` back to the prompt.
+Keys in the pane: `n` new issue, `r` refresh, `b` back, `e` edit details, `c` close, `Tab` to
+move (to the Claude dropdown too, where the arrows choose and `Enter` runs), `Esc` back to the
+prompt.
 
 Issue types and fields exist only in repositories owned by an organization; elsewhere the
 pane leaves them out. Projects need
